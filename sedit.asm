@@ -9,6 +9,9 @@
 include    bios.inc
 include    kernel.inc
 
+d_idewrite: equ    044ah
+d_ideread:  equ    0447h
+
            org     8000h
            lbr     0ff00h
            db      'sedit',0
@@ -251,7 +254,7 @@ readit:    ldi     low sector          ; point to sector number
            ldi     low secbuf
            plo     rf
            sep     scall               ; read the sector
-           dw      f_ideread
+           dw      d_ideread
            lbr     dsp_sec
 
 write:     ldi     low sector          ; point to sector number
@@ -269,7 +272,7 @@ write:     ldi     low sector          ; point to sector number
            ldi     low secbuf
            plo     rf
            sep     scall               ; write the sector
-           dw      f_idewrite
+           dw      d_idewrite
            lbr     dsp_sec
  
 nxt_sec:   ldi     low sector          ; point to current sector number
