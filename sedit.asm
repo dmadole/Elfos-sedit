@@ -6,28 +6,15 @@
 ; *** without express written permission from the author.         ***
 ; *******************************************************************
 
-include    bios.inc
-include    kernel.inc
+include    ../bios.inc
+include    ../kernel.inc
 
 d_idewrite: equ    044ah
 d_ideread:  equ    0447h
 
-           org     8000h
-           lbr     0ff00h
-           db      'sedit',0
-           dw      9000h
-           dw      endrom+7000h
-           dw      2000h
-           dw      endrom-2000h
-           dw      2000h
-           db      0
-
-
            org     02000h
-           br      start
-
-include    date.inc
-include    build.inc
+begin:     br      start
+           eever
            db      'Written by Michael H. Riley',0
 
 sector:    dw      0
@@ -101,7 +88,8 @@ mainlpgo:  glo     re
 
            lbr     mainlp
 
-quit:      sep     sret                ; return to Elf/OS
+quit:      ldi     0
+           sep     sret                ; return to Elf/OS
 
 disp_hi:   ldi     0                   ; setup address
            plo     r9
@@ -403,9 +391,12 @@ sec_msg:   db      'Current sector: ',0
 
 endrom:    equ     $
 
+.suppress
+
 buffer:    ds      256
 ascbuf:    ds      80
 outbuf:    ds      80
 secbuf:    ds      512
 
+           end     begin
 
