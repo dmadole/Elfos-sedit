@@ -6,18 +6,19 @@
 ; *** without express written permission from the author.         ***
 ; *******************************************************************
 
-include    ../bios.inc
-include    ../kernel.inc
+#include    ../bios.inc
+#include    ../kernel.inc
 
 d_idewrite: equ    044ah
 d_ideread:  equ    0447h
 
            org     02000h
 begin:     br      start
-           eever
+           ever
            db      'Written by Michael H. Riley',0
 
 sector:    dw      0
+drive:     db      0
 
 start:     ldi     high sector         ; point to base page
            phi     rb
@@ -85,6 +86,9 @@ mainlpgo:  glo     re
            glo     re                  ; recover command
            smi     'C'                 ; check for read AU chain command
            lbz     chain               ; jump if so
+           glo     re                  ; recover command
+           smi     'S'                 ; check for set drive
+           lbz     setdrv              ; jump if so
 
            lbr     mainlp
 
@@ -235,7 +239,9 @@ readit:    ldi     low sector          ; point to sector number
            plo     r7
            ldi     0
            plo     r8
-           ldi     0e0h                ; in lba mode
+           inc     rb
+           ldn     rb
+           ori     0e0h
            phi     r8
            ldi     high secbuf         ; point to sector buffer
            phi     rf
@@ -253,7 +259,8 @@ write:     ldi     low sector          ; point to sector number
            plo     r7
            ldi     0
            plo     r8
-           ldi     0e0h                ; in lba mode
+           lda     rb
+           ori     0e0h
            phi     r8
            ldi     high secbuf         ; point to sector buffer
            phi     rf
@@ -297,6 +304,25 @@ dsp_sec:   ldi     high sec_msg        ; display message
            dw      loadbuf
            sep     scall               ; convert sector number
            dw      f_hexout4
+           ldi     0                   ; write terminator
+           str     rf
+           sep     scall               ; point to buffer
+           dw      loadbuf
+           sep     scall               ; and display it
+           dw      o_msg
+
+           ldi     high drv_msg        ; display message
+           phi     rf
+           ldi     low drv_msg
+           plo     rf
+           sep     scall               ; and display it
+           dw      o_msg
+           lda     rb                  ; and retrieve it
+           plo     rd
+           sep     scall               ; point to buffer
+           dw      loadbuf
+           sep     scall               ; convert sector number
+           dw      f_hexout2
            ldi     0                   ; write terminator
            str     rf
            sep     scall               ; point to buffer
@@ -377,6 +403,14 @@ loadbuf:   ldi     high buffer
            plo     rf
            sep     sret
 
+setdrv:    sep     scall               ; convert drive number
+           dw      f_hexin
+           ldi     low drive           ; point to drive number
+           plo     rb
+           glo     rd                  ; and write sector address
+           str     rb
+           lbr     mainlp              ; back to main loop
+
 docrlf:    ldi     high crlf
            phi     rf
            ldi     low crlf
@@ -388,6 +422,7 @@ docrlf:    ldi     high crlf
 prompt:    db      '>',0
 crlf:      db      10,13,0
 sec_msg:   db      'Current sector: ',0
+drv_msg:   db      ' drive: ',0
 
 endrom:    equ     $
 
