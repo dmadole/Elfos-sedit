@@ -12,12 +12,22 @@
 d_idewrite: equ    044ah
 d_ideread:  equ    0447h
 
+           org     1ffah
+           dw      begin
+           dw      end-begin
+           dw      begin
+
            org     02000h
 begin:     br      start
-           ever
-           db      'Written by Michael H. Riley',0
 
-sector:    dw      0
+           db      7+80h
+           db      30
+           dw      2023
+           dw      101
+
+           db      'By Michael H. Riley, see github.com/dmadole/Elfos-sedit',0
+
+sector:    db      0,0,0
 drive:     db      0
 
 start:     ldi     high sector         ; point to base page
@@ -26,6 +36,8 @@ start:     ldi     high sector         ; point to base page
            plo     rb
            ldi     0ffh                ; indicate no sector loaded
            str     rb                  ; write to pointer
+           inc     rb
+           str     rb
            inc     rb
            str     rb
 
@@ -44,15 +56,25 @@ mainlp:    ldi     high prompt         ; get address of prompt
            dw      docrlf
            sep     scall
            dw      loadbuf
+
            lda     rf                  ; get command byte
            plo     re                  ; keep a copy
+
            smi     'a'                 ; check if below lc
-           lbnf    mainlpgo            ; jump if so
+           lbnf    skipspc            ; jump if so
            smi     27                  ; check if above lc
-           lbdf    mainlpgo
+           lbdf    skipspc
+
            glo     re                  ; convert to uppercase
            smi     32
            plo     re
+
+skipspc:   lda     rf                  ; skip any trailing spaces
+           lbz     mainlpgo
+           sdi     ' '
+           lbdf    skipspc
+           dec     rf
+
 mainlpgo:  glo     re
            smi     'L'                 ; check for display Low command
            lbz     disp_lo             ; jump if so
@@ -89,7 +111,13 @@ mainlpgo:  glo     re
            glo     re                  ; recover command
            smi     'S'                 ; check for set drive
            lbz     setdrv              ; jump if so
+           glo     re                  ; recover command
+           smi     'Z'                 ; check for fill buffer with zeroes
+           lbz     zerobuf             ; jump if so
 
+           sep     scall
+           dw      o_inmsg
+           db      "Command error",13,10,0
            lbr     mainlp
 
 quit:      ldi     0
@@ -212,33 +240,41 @@ asc_go:    str     r7                  ; store into buffer
 
 rd_au:     sep     scall               ; convert au number
            dw      f_hexin
+           glo     rd
+           plo     r7
+           ghi     rd
+           phi     r7
+           ldi     0
+           plo     r8
            ldi     3                   ; need to shift by 3
            plo     rc
-au_lp:     glo     rd                  ; multiply by 2
+au_lp:     glo     r7                  ; multiply by 2
            shl
-           plo     rd
-           ghi     rd
+           plo     r7
+           ghi     r7
            shlc
-           phi     rd
+           phi     r7
+           glo     r8
+           shlc
+           plo     r8
            dec     rc                  ; decrement count
            glo     rc                  ; see if done
            lbnz    au_lp               ; loop back if not
            lbr     readit              ; read first sector of au
+
 rd_sec:    sep     scall               ; convert sector number
-           dw      f_hexin
+           dw      hexin6
+
 readit:    ldi     low sector          ; point to sector number
            plo     rb
-           ghi     rd                  ; and write sector address
+           glo     r8                  ; and write sector address
            str     rb
            inc     rb
-           glo     rd
+           ghi     r7
            str     rb
-           ghi     rd                  ; prepare for sector read
-           phi     r7
-           glo     rd
-           plo     r7
-           ldi     0
-           plo     r8
+           inc     rb
+           glo     r7
+           str     rb
            inc     rb
            ldn     rb
            ori     0e0h
@@ -249,16 +285,20 @@ readit:    ldi     low sector          ; point to sector number
            plo     rf
            sep     scall               ; read the sector
            dw      d_ideread
+           lbnf    dsp_sec
+           sep     scall
+           dw      o_inmsg
+           db      "Read error",13,10,0
            lbr     dsp_sec
 
 write:     ldi     low sector          ; point to sector number
            plo     rb
            lda     rb                  ; and read it
+           plo     r8
+           lda     rb
            phi     r7
            lda     rb
            plo     r7
-           ldi     0
-           plo     r8
            lda     rb
            ori     0e0h
            phi     r8
@@ -268,24 +308,40 @@ write:     ldi     low sector          ; point to sector number
            plo     rf
            sep     scall               ; write the sector
            dw      d_idewrite
+           lbnf    dsp_sec
+           sep     scall
+           dw      o_inmsg
+           db      "Write error",13,10,0
            lbr     dsp_sec
  
-nxt_sec:   ldi     low sector          ; point to current sector number
+nxt_sec:   ldi     low (sector+2)      ; point to current sector number
            plo     rb
-           lda     rb                  ; and read it
-           phi     rd
-           lda     rb
-           plo     rd
-           inc     rd                  ; increment sector number
+           ldn     rb                  ; increment sector number
+           adi     1
+           plo     r7
+           dec     rb
+           ldn     rb
+           adci    0
+           phi     r7
+           dec     rb
+           ldn     rb
+           adci    0
+           plo     r8
            lbr     readit              ; and read new physical sector
 
-prv_sec:   ldi     low sector          ; point to current sector number
+prv_sec:   ldi     low (sector+2)      ; point to current sector number
            plo     rb
-           lda     rb                  ; and read it
-           phi     rd
-           lda     rb
-           plo     rd
-           dec     rd                  ; decrement sector number
+           ldn     rb                  ; and read it
+           smi     1
+           plo     r7
+           dec     rb
+           ldn     rb
+           smbi    0
+           phi     r7
+           dec     rb
+           ldn     rb
+           smbi    0
+           plo     r8
            lbr     readit              ; and read new physical sector
 
 dsp_sec:   ldi     high sec_msg        ; display message
@@ -297,11 +353,15 @@ dsp_sec:   ldi     high sec_msg        ; display message
            ldi     low sector          ; get current sector number
            plo     rb
            lda     rb                  ; and retrieve it
-           phi     rd
-           lda     rb
            plo     rd
            sep     scall               ; point to buffer
            dw      loadbuf
+           sep     scall               ; convert sector number
+           dw      f_hexout2
+           lda     rb                  ; and retrieve it
+           phi     rd
+           lda     rb
+           plo     rd
            sep     scall               ; convert sector number
            dw      f_hexout4
            ldi     0                   ; write terminator
@@ -319,10 +379,12 @@ dsp_sec:   ldi     high sec_msg        ; display message
            dw      o_msg
            lda     rb                  ; and retrieve it
            plo     rd
+           ldi     0
+           phi     rd
            sep     scall               ; point to buffer
            dw      loadbuf
-           sep     scall               ; convert sector number
-           dw      f_hexout2
+           sep     scall               ; convert drive number
+           dw      f_uintout
            ldi     0                   ; write terminator
            str     rf
            sep     scall               ; point to buffer
@@ -404,12 +466,41 @@ loadbuf:   ldi     high buffer
            sep     sret
 
 setdrv:    sep     scall               ; convert drive number
-           dw      f_hexin
+           dw      f_atoi
            ldi     low drive           ; point to drive number
            plo     rb
            glo     rd                  ; and write sector address
            str     rb
-           lbr     mainlp              ; back to main loop
+           ldi     low sector          ; point to sector number
+           plo     rb
+           lda     rb                  ; and read it
+           plo     r8
+           lda     rb
+           phi     r7
+           lda     rb
+           plo     r7
+           lbr     readit
+
+zerobuf:   ldi     high secbuf         ; point to sector buffer
+           phi     rf
+           ldi     low secbuf
+           plo     rf
+
+           ldi     255
+           plo     re
+           inc     re
+
+zerolp:    ldi     0
+           str     rf
+           inc     rf
+           str     rf
+           inc     rf
+
+           dec     re
+           glo     re
+           lbnz    zerolp
+
+           lbr     mainlp
 
 docrlf:    ldi     high crlf
            phi     rf
@@ -419,12 +510,74 @@ docrlf:    ldi     high crlf
            dw      o_msg
            sep     sret
 
+         ; This is like the BIOS f_hexin except its 24-bit instead of 16-bit,
+         ; and it returns the result in R8:R7 instead of RD.
+
+hexin6:    ldi     0
+           plo     r7
+           phi     r7
+           plo     r8
+
+dodigit:   lda     rf
+           sdi     'f'
+           lbnf    return
+
+           sdi     'f'-'a'
+           lbdf    isalpha
+
+           sdi     'F'-'a'
+           lbnf    return
+
+           sdi     'F'-'A'
+           lbdf    isalpha
+
+           sdi     '9'-'A'
+           lbnf    return
+
+           sdi     '9'-'0'
+           lbdf    isdigit
+
+return:    dec     rf
+           sep     sret
+
+isalpha:   adi     10
+
+isdigit:   shl
+           shl
+           shl
+           shl
+           phi     r8
+
+           ldi     4
+           plo     re
+
+shift4:    ghi     r8
+           shl
+           phi     r8
+           glo     r7
+           shlc
+           plo     r7
+           ghi     r7
+           shlc
+           phi     r7
+           glo     r8
+           shlc
+           plo     r8
+           
+           dec     re
+           glo     re
+           bnz     shift4
+
+           lbr     dodigit
+
+
+
+
+
 prompt:    db      '>',0
 crlf:      db      10,13,0
 sec_msg:   db      'Current sector: ',0
 drv_msg:   db      ' drive: ',0
-
-endrom:    equ     $
 
 .suppress
 
@@ -433,5 +586,5 @@ ascbuf:    ds      80
 outbuf:    ds      80
 secbuf:    ds      512
 
-           end     begin
+end:       end     begin
 
